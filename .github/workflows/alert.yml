@@ -1,0 +1,54 @@
+name: 0050 drawdown alert
+
+on:
+  schedule:
+    # UTC 06:30 = 台灣時間 14:30（週一到週五，台股 13:30 收盤後）
+    - cron: "30 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "只發送一則測試訊息"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # 需要把 alert_state.json 提交回儲存庫
+
+concurrency:
+  group: etf0050-alert
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          if [ "${{ inputs.test }}" = "true" ]; then
+            python etf0050_drawdown_alert.py --test
+          else
+            python etf0050_drawdown_alert.py
+          fi
+
+      - name: Save state
+        if: ${{ always() && inputs.test != true }}
+        run: |
+          if [ -f alert_state.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add alert_state.json
+            git diff --cached --quiet || (git commit -m "update state" && git push)
+          fi
